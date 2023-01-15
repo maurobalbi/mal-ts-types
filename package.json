@@ -1,0 +1,8 @@
+{
+  "devDependencies": {
+    "typescript": "^4.8.4"
+  },
+  "dependencies": {
+    "typescript-language-server": "^2.1.0"
+  }
+}
