@@ -1,114 +1,114 @@
-const readLine = require("readline");
-const { spawn } = require("child_process");
+const readline = require("readline/promises");
+const { fork } = require("child_process");
 const { stdin: input, stdout: output } = require('node:process');
+const fs = require('fs');
 
-const rl = readLine.createInterface({ input, output, prompt: '> '});
+// const rl = readLine.createInterface({ input, output, prompt: '> '});
 
-rl.prompt();
+// rl.prompt();
+const spawnProcess = async () => {
+  const child = fork("./node_modules/typescript/lib/tsserver.js", ["--useNodeIpc"], {
+    stdio: ['pipe', 'pipe', 'pipe', 'ipc']
+  
+  });
 
+  const rl = readline.createInterface({ input, output});
 
-child = spawn("./node_modules/typescript/bin/tsserver")
+  const server = new Server(child);
+  child.on('error', err => console.error(err))
+  child.on('message', data => server.handleResponse(data))
 
-rl.on("line", line => {child.stdin.write(evalLine(line.toString()))});
-
-child.stdin.setEncoding('utf-8');
-
-child.stdin.write(JSON.stringify({
-  "seq": 0,
-  "type": "request",
-  "command": "configure",
-  "arguments": {
-    "hostInfo": "vscode",
-    "preferences": {
-      "providePrefixAndSuffixTextForRename": true,
-      "allowRenameOfImportPath": true,
-      "includePackageJsonAutoImports": "auto"
-    },
-    "watchOptions": {}
-  }
-}) + '\n' + JSON.stringify({
-  "seq": 1,
-  "type": "request",
-  "command": "compilerOptionsForInferredProjects",
-  "arguments": {
-    "options": {
-      "module": "ESNext",
-      "moduleResolution": "Node",
-      "target": "ES2020",
-      "jsx": "react",
-      "strictNullChecks": true,
-      "strictFunctionTypes": true,
-      "sourceMap": true,
-      "allowJs": true,
-      "allowSyntheticDefaultImports": true,
-      "allowNonTsExtensions": true,
-      "resolveJsonModule": true
+  child.send({
+    "seq": 0,
+    "type": "request",
+    "command": "configure",
+    "arguments": {
+      "hostInfo": "vscode",
+      "preferences": {
+        "providePrefixAndSuffixTextForRename": true,
+        "allowRenameOfImportPath": true,
+        "includePackageJsonAutoImports": "auto"
+      },
+      "watchOptions": {}
     }
-  }
-}) + '\n' + JSON.stringify({
-  "seq": 2,
-  "type": "request",
-  "command": "updateOpen",
-  "arguments": {
-    "changedFiles": [],
-    "closedFiles": [],
-    "openFiles": [
-      {
-        "file": "/Users/maurobalbi/Documents/repos/mal-ts-types/mal.ts",
-        "fileContent": "type input = \"abc\"\n\ntype output = Repl<input>\n\ntype Read<T> = T;\n\ntype Eval<T> = T;\n\ntype Print <T> = T;\n\ntype Repl<T> = Print<Eval<Read<T>>>;",
-        "projectRootPath": "/Users/maurobalbi/Documents/repos/mal-ts-types",
-        "scriptKindName": "TS"
+  }) 
+  child.send({
+    "seq": 1,
+    "type": "request",
+    "command": "compilerOptionsForInferredProjects",
+    "arguments": {
+      "options": {
+        "module": "ESNext",
+        "moduleResolution": "Node",
+        "target": "ES2020",
+        "jsx": "react",
+        "strictNullChecks": true,
+        "strictFunctionTypes": true,
+        "sourceMap": true,
+        "allowJs": true,
+        "allowSyntheticDefaultImports": true,
+        "allowNonTsExtensions": true,
+        "resolveJsonModule": true
       }
-    ]
-  }
-}) + '\n' + JSON.stringify({
-  "seq": 14,
-  "type": "request",
-  "command": "quickinfo",
-  "arguments": {
-    "file": "/Users/maurobalbi/Documents/repos/mal-ts-types/mal.ts",
-    "line": 1,
-    "offset": 7
-  }
-}) + '\n') 
-
-const evalLine = line => {
-  return JSON.stringify({ "seq": 71, "type": "request", "command": "updateOpen", "arguments": { "changedFiles": [{ "fileName": "/Users/maurobalbi/Documents/repos/mal-ts-types/mal.ts", "textChanges": [{ "newText": "a", "start": { "line": 1, "offset": 15 }, "end": { "line": 1, "offset": 18 } }] }], "closedFiles": [], "openFiles": [] } }) + '\n' + JSON.stringify({ "seq": 58, "type": "request", "command": "quickinfo", "arguments": { "file": "/Users/maurobalbi/Documents/repos/mal-ts-types/mal.ts", "line": 3, "offset": 9 } }) + '\n'
-}
-
-child.stdout.on('data', (data) => {
-  const responses = data.toString().split('\n');
-
-  for (const res of responses) {
-    const parsedData = parseData(res);
-    let displayString = "";
-    try{
-      displayString = parsedData.body.displayString;
-      console.log(displayString.split('type input = ')[1].slice(1, -1))
     }
-    catch(e){
-      console.log(e)
+  }) 
+  child.send({
+    "seq": 2,
+    "type": "request",
+    "command": "updateOpen",
+    "arguments": {
+      "changedFiles": [],
+      "closedFiles": [],
+      "openFiles": [
+        {
+          "file": "/Users/maurobalbi/Documents/repos/mal-ts-types/mal.ts",
+          "projectRootPath": "/Users/maurobalbi/Documents/repos/mal-ts-types",
+          "scriptKindName": "TS"
+        }
+      ]
     }
-  }
-});
+  })
 
-const parseData = (line) => {
-  try {
-    return JSON.parse(line);
-  }
-  catch (e) {
-    return null
+
+  while(true) {
+    const line = await rl.question("> ")
+    const output = await server.eval(line.toString());
+    console.log(output)
   }
 }
 
-child.stderr.on('data', (data) => {
-  console.error(`stderr: ${data}`);
-});
+class Server {
+  constructor(child) {
+    this._process = child;
+    this._seq = 3;
+    this._spanLength = 3;
+    this._reqs = new Map();
+  }
 
-child.on('close', (code) => {
-  console.log(`child process exited with code ${code}`);
-});
+  eval(line) {
+    let _line = line.replace('\n', "")
+    _line = line.replaceAll('"', '\\"')
 
-child.on('error', (err) => {
-  console.error('Failed to start subprocess.');
-});
+    const cmd = { "seq": this._seq, "type": "request", "command": "updateOpen", "arguments": { "changedFiles": [{ "fileName": "/Users/maurobalbi/Documents/repos/mal-ts-types/mal.ts", "textChanges": [{ "newText": _line, "start": { "line": 1, "offset": 15 }, "end": { "line": 1, "offset": 15 + this._spanLength } }] }], "closedFiles": [], "openFiles": [] } }
+    this._spanLength = _line.length;
+    this._process.send(cmd);
+    this._process.send({ "seq": this._seq + 1, "type": "request", "command": "quickinfo", "arguments": { "file": "/Users/maurobalbi/Documents/repos/mal-ts-types/mal.ts", "line": 3, "offset": 9 } });
+    return new Promise(resolve => {
+      this._reqs.set(this._seq++, resolve);
+    })
+  }
+
+  handleResponse(data) {
+    const seq = data?.request_seq;
+    if(seq > 2 && data.command === 'updateOpen') {
+      this._seq++;
+    }
+
+    if(seq > 2 && data.command === 'quickinfo') {
+      const resolve = this._reqs.get(seq - 1);
+      resolve && resolve(data?.body?.displayString);
+    }
+  }
+}
+
+spawnProcess().then((here) => console.log(here)).catch(err => console.error(err))
